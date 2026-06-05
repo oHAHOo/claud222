@@ -1,0 +1,44 @@
+@baseUrl = http://localhost:8080/api/v1
+@contentType = application/json
+
+###
+# 1. 주문 미리보기
+POST {{baseUrl}}/orders/preview
+Content-Type: {{contentType}}
+Authorization: Bearer {{token}}
+
+{
+    "cartItemIds": [1]
+}
+
+###
+# 2. 주문, 결제 생성
+POST {{baseUrl}}/orders
+Content-Type: {{contentType}}
+Authorization: Bearer {{token}}
+
+{
+    "cartItemIds": [1],
+    "usedPoint": 0
+}
+
+###
+# 3. 결제 확정
+POST {{baseUrl}}/payments/confirm
+Content-Type: {{contentType}}
+Authorization: Bearer {{token}}
+
+{
+    "orderId": 1,
+    "portonePaymentId": "PAY-ORD-20260605-7F374A9D-EB6C7B13"
+}
+
+###
+# 4. 결제 취소
+POST {{baseUrl}}/orders/1/cancel
+Content-Type: {{contentType}}
+Authorization: Bearer {{token}}
+
+{
+    "cancelReason": "단순 변심"
+}

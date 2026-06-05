@@ -1,0 +1,74 @@
+### 공통 변수
+@baseUrl = http://localhost:8080/api/v1
+@contentType = application/json
+
+###
+# 1. 회원가입
+POST {{baseUrl}}/signup
+Content-Type: {{contentType}}
+
+{
+  "email": "test@example.com",
+  "password": "Test1234!",
+  "name": "테스트유저",
+  "phoneNumber": "010-1234-5678"
+}
+
+###
+# 2. 로그인 (응답의 token 값을 아래 token 변수에 자동으로 복사)
+POST {{baseUrl}}/login
+Content-Type: {{contentType}}
+
+{
+  "email": "test@example.com",
+  "password": "Test1234!"
+}
+
+> {% client.global.set("token", response.body.data.accessToken); %}
+
+###
+# 3. 장바구니 상품 추가 (productId=1, 무선 마우스)
+POST {{baseUrl}}/cart/items
+Content-Type: {{contentType}}
+Authorization: Bearer {{token}}
+
+{
+  "productId": 1,
+  "quantity": 1
+}
+
+###
+# 4. 장바구니 상품 추가 (productId=2, 기계식 키보드)
+POST {{baseUrl}}/cart/items
+Content-Type: {{contentType}}
+Authorization: Bearer {{token}}
+
+{
+  "productId": 2,
+  "quantity": 1
+}
+
+###
+# 5. 장바구니 전체 조회
+GET {{baseUrl}}/cart/items
+Authorization: Bearer {{token}}
+
+###
+# 6. 장바구니 상품 수량 수정 (cartItemId=1, 수량 5로 변경)
+PATCH {{baseUrl}}/cart/items/1
+Content-Type: {{contentType}}
+Authorization: Bearer {{token}}
+
+{
+  "quantity": 1
+}
+
+###
+# 7. 장바구니 상품 개별 삭제 (cartItemId=1)
+DELETE {{baseUrl}}/cart/items/1
+Authorization: Bearer {{token}}
+
+###
+# 8. 장바구니 비우기 (전체 삭제)
+DELETE {{baseUrl}}/cart/items
+Authorization: Bearer {{token}}
