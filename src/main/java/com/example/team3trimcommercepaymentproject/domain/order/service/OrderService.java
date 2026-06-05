@@ -4,9 +4,11 @@ import com.example.team3trimcommercepaymentproject.domain.cart.entity.Cart;
 import com.example.team3trimcommercepaymentproject.domain.cart.entity.CartItem;
 import com.example.team3trimcommercepaymentproject.domain.cart.repository.CartItemRepository;
 import com.example.team3trimcommercepaymentproject.domain.cart.repository.CartRepository;
+import com.example.team3trimcommercepaymentproject.domain.order.dto.PartialRefundDTO;
 import com.example.team3trimcommercepaymentproject.domain.order.dto.request.OrderCancelRequest;
 import com.example.team3trimcommercepaymentproject.domain.order.dto.request.OrderCreateRequest;
 import com.example.team3trimcommercepaymentproject.domain.order.dto.request.OrderPreviewRequest;
+import com.example.team3trimcommercepaymentproject.domain.order.dto.request.PartialRefundRequest;
 import com.example.team3trimcommercepaymentproject.domain.order.dto.response.*;
 import com.example.team3trimcommercepaymentproject.domain.order.entity.Order;
 import com.example.team3trimcommercepaymentproject.domain.order.dto.OrderCancelDTO;
@@ -31,7 +33,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -302,6 +307,135 @@ public class OrderService {
         );
 
         return new OrderCancelDTO(response, payment.getPortonePaymentId(), cancelRequest.cancelReason(), needsPgCancel, payment.getId());
+    }
+
+    /**
+     * 부분 환불 (2단계 DB 갱신 트랜잭션)
+     */
+    @Transactional
+    public PartialRefundDTO partialRefund(Long memberId, Long orderId, PartialRefundRequest request) {
+        Order order = getOrderEntity(memberId, orderId);
+        Payment payment = order.getPayment();
+
+        Map<Long, OrderItem> itemMap = order.getOrderItems().stream()
+            .collect(Collectors.toMap(OrderItem::getId, oi -> oi));
+
+        // 요청된 주문 상품 매핑 및 검증
+        Map<OrderItem, Integer> refundMap = new LinkedHashMap<>();
+        for (PartialRefundRequest.RefundItemRequest req : request.items()) {
+            OrderItem oi = itemMap.get(req.orderItemId());
+            if (oi == null) throw new BusinessException(ErrorCode.ORDER_ITEM_NOT_FOUND);
+            if (req.quantity() > oi.getRefundableQuantity())
+                throw new BusinessException(ErrorCode.REFUND_QUANTITY_EXCEEDED);
+            refundMap.put(oi, req.quantity());
+        }
+
+        // 이미 완료된 환불 금액 합계 (마지막 환불 보정용)
+        long alreadyRefunded = refundItemRepository.sumRefundedAmountByPaymentId(payment.getId());
+
+        // 전액 환불 여부 확인 (이번 환불 후 잔여 환불 가능 수량이 0인지)
+        boolean isFullRefund = order.getOrderItems().stream().allMatch(oi -> {
+            int refundQty = refundMap.getOrDefault(oi, 0);
+            return oi.getRefundedQuantity() + refundQty >= oi.getQuantity();
+        });
+
+        // 아이템별 환불 금액 계산
+        long paymentTotal = payment.getTotalAmount();
+        long usedPoint = payment.getUsedPoint();
+
+        List<PartialRefundDTO.RefundItemData> itemDataList = new ArrayList<>();
+        long totalItemAmount = 0;
+        for (Map.Entry<OrderItem, Integer> entry : refundMap.entrySet()) {
+            OrderItem oi = entry.getKey();
+            int qty = entry.getValue();
+            long itemTotal = oi.getPriceSnapshot() * qty;
+            long itemPoint = paymentTotal > 0 ? itemTotal * usedPoint / paymentTotal : 0;
+            long itemPg = itemTotal - itemPoint;
+            itemDataList.add(new PartialRefundDTO.RefundItemData(oi.getId(), qty, itemTotal, itemPoint, itemPg));
+            totalItemAmount += itemTotal;
+        }
+
+        // 마지막 환불 보정: 잔여 전체 금액으로 교체하여 반올림 누적 오차 제거
+        long totalRefundAmount = totalItemAmount;
+        if (isFullRefund) {
+            long remaining = paymentTotal - alreadyRefunded;
+            long delta = remaining - totalItemAmount;
+            if (delta != 0 && !itemDataList.isEmpty()) {
+                PartialRefundDTO.RefundItemData last = itemDataList.get(itemDataList.size() - 1);
+                itemDataList.set(itemDataList.size() - 1, new PartialRefundDTO.RefundItemData(
+                    last.orderItemId(), last.quantity(), last.itemTotalAmount() + delta,
+                    last.itemPointRefundAmount(), last.itemPgRefundAmount() + delta
+                ));
+            }
+            totalRefundAmount = remaining;
+        }
+
+        // 집계 포인트/PG 환불액 산정
+        long totalPointRefund;
+        long totalPgRefund;
+        if (payment.getPgAmount() == 0) {
+            totalPointRefund = totalRefundAmount;
+            totalPgRefund = 0;
+        } else {
+            totalPointRefund = totalRefundAmount * usedPoint / paymentTotal;
+            totalPgRefund = totalRefundAmount - totalPointRefund;
+        }
+
+        // 적립 회수액 산정
+        long earnedPointCancel = payment.getPgAmount() > 0
+            ? payment.getEarnedPoint() * totalPgRefund / payment.getPgAmount()
+            : 0;
+
+        // 포인트 부족 정책: 부족분을 PG 환불액에 가산
+        long memberBalance = order.getMember().getPoint();
+        if (earnedPointCancel > memberBalance) {
+            long shortage = earnedPointCancel - memberBalance;
+            totalPgRefund += shortage;
+            earnedPointCancel = memberBalance;
+        }
+
+        // 재고 복구 및 환불 수량 반영
+        for (Map.Entry<OrderItem, Integer> entry : refundMap.entrySet()) {
+            OrderItem oi = entry.getKey();
+            int qty = entry.getValue();
+            oi.getProduct().increaseStock(qty);
+            oi.refundQuantity(qty);
+        }
+
+        // 상태 전이
+        if (isFullRefund) {
+            order.cancel(request.cancelReason());
+            payment.refund();
+        } else {
+            payment.partialRefund();
+        }
+
+        // 포인트 거래 처리
+        if (earnedPointCancel > 0)
+            pointTransactionService.cancelEarnPoint(memberId, payment, earnedPointCancel);
+        if (totalPointRefund > 0)
+            pointTransactionService.restoreUsedPoint(memberId, payment, totalPointRefund);
+
+        PartialRefundResponse response = new PartialRefundResponse(
+            order.getId(),
+            order.getOrderNumber(),
+            order.getStatus(),
+            payment.getStatus(),
+            totalRefundAmount,
+            totalPointRefund,
+            totalPgRefund,
+            request.cancelReason()
+        );
+
+        return new PartialRefundDTO(
+            response,
+            payment.getPortonePaymentId(),
+            request.cancelReason(),
+            totalPgRefund,
+            payment.getId(),
+            itemDataList,
+            totalPointRefund
+        );
     }
 
     private List<CartItem> selectCartItems(List<CartItem> cartItems, List<Long> cartItemIds) {

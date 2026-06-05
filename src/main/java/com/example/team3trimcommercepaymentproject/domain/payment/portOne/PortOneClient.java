@@ -34,6 +34,29 @@ public class PortOneClient {
                 .block();
     }
 
+    public void cancelPaymentPartial(String paymentId, String reason, long amount) {
+        String idempotencyKey = UUID.randomUUID().toString();
+        Map<String, Object> body = Map.of("storeId", storeId, "reason", reason, "amount", amount);
+
+        int maxRetries = 3;
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                portOneWebClient.post()
+                    .uri("/payments/{paymentId}/cancel", paymentId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header("Idempotency-Key", idempotencyKey)
+                    .bodyValue(body)
+                    .retrieve()
+                    .toBodilessEntity()
+                    .block();
+                return;
+            } catch (WebClientRequestException e) {
+                log.warn("PortOne 부분취소 요청 타임아웃 (시도 {}/{})", attempt, maxRetries);
+                if (attempt == maxRetries) throw e;
+            }
+        }
+    }
+
     // portOne으로 결제 취소 post요청
     public void cancelPayment(String paymentId, String reason) {
         String idempotencyKey = UUID.randomUUID().toString();

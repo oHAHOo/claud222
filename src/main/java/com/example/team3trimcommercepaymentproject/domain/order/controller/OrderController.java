@@ -3,12 +3,15 @@ package com.example.team3trimcommercepaymentproject.domain.order.controller;
 import com.example.team3trimcommercepaymentproject.domain.order.dto.request.OrderCancelRequest;
 import com.example.team3trimcommercepaymentproject.domain.order.dto.request.OrderCreateRequest;
 import com.example.team3trimcommercepaymentproject.domain.order.dto.request.OrderPreviewRequest;
+import com.example.team3trimcommercepaymentproject.domain.order.dto.request.PartialRefundRequest;
 import com.example.team3trimcommercepaymentproject.domain.order.dto.response.*;
 import com.example.team3trimcommercepaymentproject.domain.order.facade.OrderCancelFacade;
+import com.example.team3trimcommercepaymentproject.domain.order.facade.OrderPartialRefundFacade;
 import com.example.team3trimcommercepaymentproject.domain.order.service.OrderService;
 import com.example.team3trimcommercepaymentproject.global.jwt.JwtProvider;
 import com.example.team3trimcommercepaymentproject.global.response.ApiResponse;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 import org.springframework.data.domain.Pageable;
@@ -26,6 +29,7 @@ public class OrderController {
 
 	private final OrderService orderService;
 	private final OrderCancelFacade orderCancelFacade;
+	private final OrderPartialRefundFacade orderPartialRefundFacade;
 
 	/**
 	 * 주문서 미리보기
@@ -86,6 +90,19 @@ public class OrderController {
 		@RequestBody OrderCancelRequest request
 	) {
 		OrderCancelResponse response = orderCancelFacade.cancel(memberId, orderId, request);
+		return ResponseEntity.ok(ApiResponse.ok(response));
+	}
+
+	/**
+	 * 부분 환불 (주문 상품 + 수량 단위)
+	 */
+	@PostMapping("/{orderId}/partial-refund")
+	public ResponseEntity<ApiResponse<PartialRefundResponse>> partialRefund(
+		@AuthenticationPrincipal Long memberId,
+		@PathVariable Long orderId,
+		@Valid @RequestBody PartialRefundRequest request
+	) {
+		PartialRefundResponse response = orderPartialRefundFacade.partialRefund(memberId, orderId, request);
 		return ResponseEntity.ok(ApiResponse.ok(response));
 	}
 }
