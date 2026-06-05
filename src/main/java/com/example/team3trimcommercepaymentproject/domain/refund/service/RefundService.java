@@ -1,10 +1,12 @@
 package com.example.team3trimcommercepaymentproject.domain.refund.service;
 
+import com.example.team3trimcommercepaymentproject.domain.order.dto.PartialRefundDTO;
 import com.example.team3trimcommercepaymentproject.domain.order.entity.Order;
 import com.example.team3trimcommercepaymentproject.domain.order.entity.OrderStatus;
 import com.example.team3trimcommercepaymentproject.domain.order.service.OrderService;
 import com.example.team3trimcommercepaymentproject.domain.orderItem.entity.OrderItem;
 import com.example.team3trimcommercepaymentproject.domain.payment.entity.Payment;
+import com.example.team3trimcommercepaymentproject.domain.payment.entity.PaymentStatus;
 import com.example.team3trimcommercepaymentproject.domain.payment.repository.PaymentRepository;
 import com.example.team3trimcommercepaymentproject.domain.refund.entity.Refund;
 import com.example.team3trimcommercepaymentproject.domain.refund.entity.RefundItem;
@@ -16,6 +18,8 @@ import com.example.team3trimcommercepaymentproject.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -38,6 +42,23 @@ public class RefundService {
 		Payment payment = order.getPayment();
 		if (payment == null)
 			throw new BusinessException(ErrorCode.PAYMENT_NOT_FOUND);
+	}
+
+	// 1단계: 부분 환불 가능 여부 선검증 (읽기 트랜잭션)
+	@Transactional(readOnly = true)
+	public void validatePartialRefundable(Long memberId, Long orderId) {
+		Order order = orderService.getOrderEntity(memberId, orderId);
+
+		if (order.getStatus() != OrderStatus.COMPLETED)
+			throw new BusinessException(ErrorCode.ORDER_NOT_REFUNDABLE);
+
+		Payment payment = order.getPayment();
+		if (payment == null)
+			throw new BusinessException(ErrorCode.PAYMENT_NOT_FOUND);
+
+		PaymentStatus paymentStatus = payment.getStatus();
+		if (paymentStatus != PaymentStatus.PAID && paymentStatus != PaymentStatus.PARTIAL_REFUNDED)
+			throw new BusinessException(ErrorCode.ORDER_NOT_REFUNDABLE);
 	}
 
 
@@ -63,6 +84,40 @@ public class RefundService {
 				.orderItem(item)
 				.refundedQuantity(item.getQuantity())
 				.refundedAmount((long) item.getPriceSnapshot() * item.getQuantity())
+				.build());
+		}
+
+		return refund.getId();
+	}
+
+	// 부분 환불 이력 저장 (재고·포인트·결제상태는 OrderService가 처리)
+	@Transactional
+	public Long savePartialRefund(PartialRefundDTO dto) {
+		Payment payment = paymentRepository.findById(dto.paymentId()).orElseThrow(
+			() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND)
+		);
+
+		Refund refund = Refund.builder()
+			.payment(payment)
+			.reason(dto.cancelReason())
+			.pointRefundPrice(dto.totalPointRefundAmount())
+			.pgRefundPrice(dto.pgRefundAmount())
+			.build();
+		refundRepository.save(refund);
+
+		Map<Long, OrderItem> itemMap = payment.getOrder().getOrderItems().stream()
+			.collect(java.util.stream.Collectors.toMap(OrderItem::getId, oi -> oi));
+
+		for (PartialRefundDTO.RefundItemData data : dto.items()) {
+			OrderItem oi = itemMap.get(data.orderItemId());
+			if (oi == null) throw new BusinessException(ErrorCode.ORDER_ITEM_NOT_FOUND);
+			refundItemRepository.save(RefundItem.builder()
+				.refund(refund)
+				.orderItem(oi)
+				.refundedQuantity(data.quantity())
+				.refundedAmount(data.itemTotalAmount())
+				.pointRefundAmount(data.itemPointRefundAmount())
+				.pgRefundAmount(data.itemPgRefundAmount())
 				.build());
 		}
 

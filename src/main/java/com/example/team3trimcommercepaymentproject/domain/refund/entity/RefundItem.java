@@ -33,11 +33,20 @@ public class RefundItem extends BaseEntity {
 	@Column(name = "refunded_amount", nullable = false)
 	private Long refundedAmount;
 
+	@Column(name = "point_refund_amount")
+	private Long pointRefundAmount;
+
+	@Column(name = "pg_refund_amount")
+	private Long pgRefundAmount;
+
 	@Builder
-	private RefundItem(Refund refund, OrderItem orderItem, int refundedQuantity, long refundedAmount) {
+	private RefundItem(Refund refund, OrderItem orderItem, int refundedQuantity, long refundedAmount,
+		Long pointRefundAmount, Long pgRefundAmount) {
 		this.refund = refund;
 		this.orderItem = orderItem;
 		this.refundedQuantity = refundedQuantity;
 		this.refundedAmount = refundedAmount;
+		this.pointRefundAmount = pointRefundAmount;
+		this.pgRefundAmount = pgRefundAmount;
 	}
 }
