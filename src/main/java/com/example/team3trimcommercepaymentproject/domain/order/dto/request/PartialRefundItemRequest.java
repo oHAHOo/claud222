@@ -1,4 +1,4 @@
-package com.example.team3trimcommercepaymentproject.domain.refund.dto.request;
+package com.example.team3trimcommercepaymentproject.domain.order.dto.request;
 
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;

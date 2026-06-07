@@ -1,4 +1,4 @@
-package com.example.team3trimcommercepaymentproject.domain.refund.dto.response;
+package com.example.team3trimcommercepaymentproject.domain.order.dto.response;
 
 import com.example.team3trimcommercepaymentproject.domain.order.entity.OrderStatus;
 import com.example.team3trimcommercepaymentproject.domain.payment.entity.PaymentStatus;
