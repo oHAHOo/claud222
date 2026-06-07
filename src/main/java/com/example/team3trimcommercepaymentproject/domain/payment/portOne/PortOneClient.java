@@ -36,8 +36,15 @@ public class PortOneClient {
 
     // portOne으로 결제 취소 post요청
     public void cancelPayment(String paymentId, String reason) {
+        cancelPayment(paymentId, null, reason);
+    }
+
+    // portOne으로 부분 취소 post요청 (amount가 null이면 전액 취소)
+    public void cancelPayment(String paymentId, Long amount, String reason) {
         String idempotencyKey = UUID.randomUUID().toString();
-        Map<String, String> body = Map.of("storeId", storeId, "reason", reason);
+        Map<String, Object> body = amount != null
+            ? Map.of("storeId", storeId, "reason", reason, "cancelAmount", amount)
+            : Map.of("storeId", storeId, "reason", reason);
 
         int maxRetries = 3;
 

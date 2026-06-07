@@ -10,7 +10,7 @@ description = 'team-3trim-commerce-payment-project'
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
+        languageVersion = JavaLanguageVersion.of(21)
     }
 }
 

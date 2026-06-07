@@ -6,8 +6,12 @@ import com.example.team3trimcommercepaymentproject.domain.order.dto.request.Orde
 import com.example.team3trimcommercepaymentproject.domain.order.dto.response.*;
 import com.example.team3trimcommercepaymentproject.domain.order.facade.OrderCancelFacade;
 import com.example.team3trimcommercepaymentproject.domain.order.service.OrderService;
+import com.example.team3trimcommercepaymentproject.domain.refund.dto.request.PartialRefundRequest;
+import com.example.team3trimcommercepaymentproject.domain.refund.dto.response.PartialRefundResponse;
+import com.example.team3trimcommercepaymentproject.domain.refund.facade.PartialRefundFacade;
 import com.example.team3trimcommercepaymentproject.global.jwt.JwtProvider;
 import com.example.team3trimcommercepaymentproject.global.response.ApiResponse;
+import jakarta.validation.Valid;
 
 import lombok.RequiredArgsConstructor;
 
@@ -26,6 +30,7 @@ public class OrderController {
 
 	private final OrderService orderService;
 	private final OrderCancelFacade orderCancelFacade;
+	private final PartialRefundFacade partialRefundFacade;
 
 	/**
 	 * 주문서 미리보기
@@ -86,6 +91,19 @@ public class OrderController {
 		@RequestBody OrderCancelRequest request
 	) {
 		OrderCancelResponse response = orderCancelFacade.cancel(memberId, orderId, request);
+		return ResponseEntity.ok(ApiResponse.ok(response));
+	}
+
+	/**
+	 * 부분(또는 전액) 환불
+	 */
+	@PostMapping("/{orderId}/partial-refund")
+	public ResponseEntity<ApiResponse<PartialRefundResponse>> partialRefund(
+		@AuthenticationPrincipal Long memberId,
+		@PathVariable Long orderId,
+		@RequestBody @Valid PartialRefundRequest request
+	) {
+		PartialRefundResponse response = partialRefundFacade.refund(memberId, orderId, request);
 		return ResponseEntity.ok(ApiResponse.ok(response));
 	}
 }
